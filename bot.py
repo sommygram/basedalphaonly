@@ -59,10 +59,10 @@ Get full access to the private group + premium bot features.
 4. You will be added to the private group and get premium access
 
 **Payment Options:**
-• USDT (TRC20): `YOUR_TRC20_ADDRESS`
-• USDT (ERC20 / BEP20): `YOUR_ERC20_ADDRESS`
-• BTC: `YOUR_BTC_ADDRESS`
-• SOL: `YOUR_SOL_ADDRESS`
+• USDT (TRC20): `TCNzzgw23nPce7TUiuNRzmVpBUfhbohAgc`
+• USDT (ERC20 / BEP20): `0x65C243E4966E11772f85d3D3A121eeFDb0A8d99A`
+• BTC: `bc1qv79mrckkr653gnf3jhal5lr8r5frcykqcf54mq`
+• SOL: `tYmCTZ3rBU92xmYJB6WEAHSSGjrSZhSKyJuQq7Y6W94`
 • Other methods → Ask @pixe1eth
 
 Once payment is confirmed, you’ll receive the private group link + premium access.
