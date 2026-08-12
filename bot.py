@@ -1,13 +1,20 @@
 import os
 import logging
-from fastapi import FastAPI, Request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes
+from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 
-# ================== CONFIG ==================
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+)
+
+# ================== LOAD ENV ==================
+load_dotenv()
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Will be your Render URL + /webhook
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN is missing!")
@@ -18,12 +25,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-# ================== FASTAPI APP ==================
-app = FastAPI()
-
-# Create the Telegram Application
-telegram_app = Application.builder().token(BOT_TOKEN).build()
 
 # ================== /start HANDLER ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -97,29 +98,57 @@ Once payment is confirmed, you’ll receive the private group link + premium acc
         except Exception as e:
             logger.error(f"Failed to notify admin: {e}")
 
-# Register the handler
-telegram_app.add_handler(CommandHandler("start", start))
+# ================== BUILD APPLICATION ==================
+application = ApplicationBuilder().token(BOT_TOKEN).build()
+application.add_handler(CommandHandler("start", start))
 
-# ================== WEBHOOK ENDPOINT ==================
-@app.post("/webhook")
-async def webhook(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, telegram_app.bot)
-    await telegram_app.process_update(update)
-    return {"ok": True}
+# ================== RUN ==================
+if __name__ == "__main__":
+    # Detect if running on Render
+    is_render = os.getenv("RENDER") == "true" or "RENDER_EXTERNAL_HOSTNAME" in os.environ
 
-@app.get("/")
-async def home():
-    return {"status": "Based Alpha Only bot is running"}
+    if is_render:
+        # ========== WEBHOOK MODE (Render) ==========
+        from fastapi import FastAPI, Request, HTTPException
+        import uvicorn
 
-# ================== STARTUP ==================
-@app.on_event("startup")
-async def startup():
-    await telegram_app.initialize()
-    await telegram_app.start()
-    
-    if WEBHOOK_URL:
-        await telegram_app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
-        logger.info(f"Webhook set to {WEBHOOK_URL}/webhook")
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            await application.initialize()
+            await application.start()
+
+            domain = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+            if domain:
+                webhook_url = f"https://{domain}/webhook"
+                await application.bot.set_webhook(url=webhook_url)
+                logger.info(f"Webhook set to: {webhook_url}")
+            else:
+                logger.warning("RENDER_EXTERNAL_HOSTNAME not found")
+
+            yield
+
+            await application.stop()
+            await application.shutdown()
+
+        app = FastAPI(lifespan=lifespan)
+
+        @app.post("/webhook")
+        async def webhook(request: Request):
+            if request.headers.get("content-type") == "application/json":
+                data = await request.json()
+                update = Update.de_json(data, application.bot)
+                await application.process_update(update)
+                return {"ok": True}
+            raise HTTPException(status_code=400, detail="Invalid content-type")
+
+        @app.get("/")
+        async def health():
+            return {"status": "Based Alpha Only bot is running ✅"}
+
+        port = int(os.getenv("PORT", 10000))
+        uvicorn.run(app, host="0.0.0.0", port=port)
+
     else:
-        logger.warning("WEBHOOK_URL not set!")
+        # ========== POLLING MODE (Local) ==========
+        logger.info("Running in polling mode...")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
