@@ -1,14 +1,16 @@
 import os
 import logging
+from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ================== CONFIG ==================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Will be your Render URL + /webhook
 
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN environment variable is missing!")
+    raise ValueError("BOT_TOKEN is missing!")
 
 # ================== LOGGING ==================
 logging.basicConfig(
@@ -16,6 +18,12 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# ================== FASTAPI APP ==================
+app = FastAPI()
+
+# Create the Telegram Application
+telegram_app = Application.builder().token(BOT_TOKEN).build()
 
 # ================== /start HANDLER ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -27,9 +35,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 Hey {user.first_name}!
 
-check our x for updates https://x.com/basedalphaonly
- 
-For support, please DM → **@pixe1eth** 
+For support, please DM → **@pixe1eth**
 
 ---
 
@@ -52,10 +58,10 @@ Get full access to the private group + premium bot features.
 4. You will be added to the private group and get premium access
 
 **Payment Options:**
-• USDT (TRC20): `TCNzzgw23nPce7TUiuNRzmVpBUfhbohAgc`
-• USDT (ERC20 / BEP20): `0x65C243E4966E11772f85d3D3A121eeFDb0A8d99A`
-• BTC: `bc1qv79mrckkr653gnf3jhal5lr8r5frcykqcf54mq`
-• SOL: `tYmCTZ3rBU92xmYJB6WEAHSSGjrSZhSKyJuQq7Y6W94`
+• USDT (TRC20): `YOUR_TRC20_ADDRESS`
+• USDT (ERC20 / BEP20): `YOUR_ERC20_ADDRESS`
+• BTC: `YOUR_BTC_ADDRESS`
+• SOL: `YOUR_SOL_ADDRESS`
 • Other methods → Ask @pixe1eth
 
 Once payment is confirmed, you’ll receive the private group link + premium access.
@@ -91,13 +97,29 @@ Once payment is confirmed, you’ll receive the private group link + premium acc
         except Exception as e:
             logger.error(f"Failed to notify admin: {e}")
 
-# ================== MAIN ==================
-def main():
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
+# Register the handler
+telegram_app.add_handler(CommandHandler("start", start))
 
-    logger.info("Bot is starting...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+# ================== WEBHOOK ENDPOINT ==================
+@app.post("/webhook")
+async def webhook(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, telegram_app.bot)
+    await telegram_app.process_update(update)
+    return {"ok": True}
 
-if __name__ == "__main__":
-    main()
+@app.get("/")
+async def home():
+    return {"status": "Based Alpha Only bot is running"}
+
+# ================== STARTUP ==================
+@app.on_event("startup")
+async def startup():
+    await telegram_app.initialize()
+    await telegram_app.start()
+    
+    if WEBHOOK_URL:
+        await telegram_app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
+        logger.info(f"Webhook set to {WEBHOOK_URL}/webhook")
+    else:
+        logger.warning("WEBHOOK_URL not set!")
